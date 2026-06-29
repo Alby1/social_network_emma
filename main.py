@@ -3,6 +3,8 @@ import time
 
 import os
 
+import dotenv
+
 from requests import request
 from requests.cookies import RequestsCookieJar, cookiejar_from_dict
 
@@ -95,6 +97,9 @@ def parse_notifications(sess: str):
                 print(f"Skipping notification {notification_id}, as it's of type {content_key}")
 
         delete_notification(sess, notification_id)
+
+    print(f"Notifications loop ended.")
+    
         
 
 def login() -> str:
@@ -115,6 +120,8 @@ def login() -> str:
 
 
 if __name__ == '__main__':
+    dotenv.load_dotenv()
+
     sess = login()
 
     if (sess is not None):
