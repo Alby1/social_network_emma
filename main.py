@@ -147,6 +147,10 @@ if __name__ == '__main__':
         if (main_session_token is not None):
             last_status_count = 1
             last_success: bool | None = None
+
+            if(logs_enabled):
+                reply_to(logs_session_token, "Emma is online!", "624")
+
             while True:
                 success, replied_to = parse_notifications(main_session_token)
                 replies += replied_to
