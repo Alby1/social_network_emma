@@ -52,7 +52,7 @@ def reply_to(sess: str, content: str, post_id: str):
     
     print(f"Replied to post {post_id}.")
 
-def parse_notifications(sess: str):
+def parse_notifications(sess: str) -> tuple[bool, int]:
     r = request("POST", f"{BASE_URL}/api/get_notifications.php", params={
         "accessToken": sess
     })
@@ -61,8 +61,9 @@ def parse_notifications(sess: str):
         print(f"ERROR parsing notifications.")
         return
     
-    print(f"Read notifications.")
     p = r.json()
+
+    replied_to = 0
 
     for n in p:
         notification_id = n["id"]
@@ -72,6 +73,8 @@ def parse_notifications(sess: str):
         content_key = n["content_key"]
         if (content_key in ['POST_MENTION', "POST_REPLIED"]):
             print(f"Working on notification {notification_id} for post {post_id}.")
+
+            replied_to += 1
 
             c = get_post_content(sess, post_id)
 
@@ -97,38 +100,85 @@ def parse_notifications(sess: str):
                 print(f"Skipping notification {notification_id}, as it's of type {content_key}")
 
         delete_notification(sess, notification_id)
+        
+        return True, replied_to
 
-    print(f"Notifications loop ended.")
+    return False, 0
     
         
 
-def login() -> str:
+def login(username: str, password: str) -> str:
     r = request("POST", f"{BASE_URL}/api/login.php", data={
-        "username": 'emma',
-        "password": os.getenv("PASSWORD")
+        "username": username,
+        "password": password
     })
     
     token = None
 
     if (r.status_code == 200):
-        print("Successfully logged in.")
+        print(f"Successfully logged in to {username}.")
         p = r.json()
         if (p["message"] in "loggedin"):
             token = p["access_token"]
+    else:
+        print(f"Could not log in to {username}: {p}.")
     
     return token
 
 
 if __name__ == '__main__':
-    dotenv.load_dotenv()
+    try:
+        dotenv.load_dotenv()
 
-    sess = login()
+        main_sess = login('emma', os.getenv("PASSWORD"))
 
-    if (sess is not None):
-        while True:
-            parse_notifications(sess)
-            time.sleep(5)
-    else:
-        print("Could not login.")
+        logs_enabled: bool = False
+        logs_sess: str | None = None
+
+        replies = 0
+
+        lp = os.getenv("LOGS_PASSWORD")
+        if (lp):
+            logs_enabled = True
+        
+        if (logs_enabled):
+            logs_sess = login('emma_logs', lp)
+
+        if (main_sess is not None):
+            last_status_count = 1
+            last_success: bool | None = None
+            while True:
+                success, replied_to = parse_notifications(main_sess)
+                replies += replied_to
+
+                if (success != last_success):
+                    if (last_success != None):
+                        string = f"Status update:\n" \
+                        f"Last status was {'successful' if last_success else 'unsuccessful'} for {last_status_count} iterations.\n" \
+                        f"Current status is {'successful' if success else 'unsuccessful'}."
+
+                        if (success == True):
+                            string = f"{string}\nReplied to {replies} posts."
+
+                        print(string)
+                        
+                        if (logs_enabled):
+                            reply_to(logs_sess, string, "624")
+
+                    last_status_count = 1
+                    last_success = success
+                    replies = 0
+                else:
+                    last_status_count += 1
+
+
+                time.sleep(5)
+        else:
+            print("Could not login.")
+    except Exception as e:
+        if(logs_enabled):
+            reply_to(logs_sess, str(e), "624")
+        
+        print(str(e))
     
     exit(1)
