@@ -11,95 +11,95 @@ from requests.cookies import RequestsCookieJar, cookiejar_from_dict
 
 BASE_URL = "http://thehardcoder.zapto.org/socialnetwork/"
 
-def delete_notification(sess: str, notification_id: str):
-    r = request("POST", f"{BASE_URL}/api/delete_notification.php", data={
-        "accessToken": sess,
+def delete_notification(session_token: str, notification_id: str):
+    reply = request("POST", f"{BASE_URL}/api/delete_notification.php", data={
+        "accessToken": session_token,
         "notificationId": notification_id
     })
 
-    if(r.status_code == 200):
+    if(reply.status_code == 200):
         print(f"Notification {notification_id} deleted.")
     else:
         print(f"ERROR Deleting notification {notification_id}.")
 
 
-def get_post_content(sess: str, post_id: str) -> str:
-    r = request("POST", f"{BASE_URL}/api/post_info.php", params={
-        "accessToken": sess,
+def get_post_content(session_token: str, post_id: str) -> str:
+    reply = request("POST", f"{BASE_URL}/api/post_info.php", params={
+        "accessToken": session_token,
         "postId": post_id
     })
 
-    if (r.status_code != 200):
+    if (reply.status_code != 200):
         print(f"ERROR getting content from post {post_id}.")
         return
     
-    p = r.json()
+    payload = reply.json()
 
     print(f"Got content from post {post_id}.")
 
-    return p["content"]
+    return payload["content"]
 
-def reply_to(sess: str, content: str, post_id: str):
-    r = request("POST", f"{BASE_URL}/api/reply_post.php", data={
-        "accessToken": sess,
+def reply_to(session_token: str, content: str, post_id: str):
+    reply = request("POST", f"{BASE_URL}/api/reply_post.php", data={
+        "accessToken": session_token,
         "replyId": post_id,
         "content": content
     })
 
-    if (r.status_code != 200):
+    if (reply.status_code != 200):
         print(f"ERROR replying to post {post_id}.")
         return
     
     print(f"Replied to post {post_id}.")
 
-def parse_notifications(sess: str) -> tuple[bool, int]:
-    r = request("POST", f"{BASE_URL}/api/get_notifications.php", params={
-        "accessToken": sess
+def parse_notifications(session_token: str) -> tuple[bool, int]:
+    reply = request("POST", f"{BASE_URL}/api/get_notifications.php", params={
+        "accessToken": session_token
     })
 
-    if (r.status_code != 200):
+    if (reply.status_code != 200):
         print(f"ERROR parsing notifications.")
         return
     
-    p = r.json()
+    payload = reply.json()
 
     replied_to = 0
 
-    for n in p:
-        notification_id = n["id"]
+    for post in payload:
+        notification_id = post["id"]
         
-        post_id = n["post_id"]
+        post_id = post["post_id"]
         
-        content_key = n["content_key"]
+        content_key = post["content_key"]
         if (content_key in ['POST_MENTION', "POST_REPLIED"]):
             print(f"Working on notification {notification_id} for post {post_id}.")
 
             replied_to += 1
 
-            c = get_post_content(sess, post_id)
+            post_content = get_post_content(session_token, post_id)
 
             call = {
                 "model": "emma",
                 "messages": [
-                    {"role": "user", "content": c}
+                    {"role": "user", "content": post_content}
                 ]
             }
             
-            r_ai = request("POST", "https://remmake.it/api/v1/chat/completions", headers={"Content-Type": "application/json"}, data=json.dumps(call))
+            emma_reply = request("POST", "https://remmake.it/api/v1/chat/completions", headers={"Content-Type": "application/json"}, data=json.dumps(call))
 
-            if (r_ai.status_code == 200):
-                p_ai = r_ai.json()
+            if (emma_reply.status_code == 200):
+                emma_payload = emma_reply.json()
 
-                c_ai = p_ai["choices"][0]["message"]["content"]
+                emma_content = emma_payload["choices"][0]["message"]["content"]
 
-                print(f"Emma replied \"{c_ai}\" to \"{c}\".")
+                print(f"Emma replied \"{emma_content}\" to \"{post_content}\".")
 
-                reply_to(sess, c_ai, post_id)
+                reply_to(session_token, emma_content, post_id)
 
             else:
                 print(f"Skipping notification {notification_id}, as it's of type {content_key}")
 
-        delete_notification(sess, notification_id)
+        delete_notification(session_token, notification_id)
         
         return True, replied_to
 
@@ -108,47 +108,47 @@ def parse_notifications(sess: str) -> tuple[bool, int]:
         
 
 def login(username: str, password: str) -> str:
-    r = request("POST", f"{BASE_URL}/api/login.php", data={
+    reply = request("POST", f"{BASE_URL}/api/login.php", data={
         "username": username,
         "password": password
     })
     
     token = None
 
-    if (r.status_code == 200):
+    if (reply.status_code == 200):
         print(f"Successfully logged in to {username}.")
-        p = r.json()
-        if (p["message"] in "loggedin"):
-            token = p["access_token"]
+        payload = reply.json()
+        if (payload["message"] in "loggedin"):
+            token = payload["access_token"]
     else:
-        print(f"Could not log in to {username}: {p}.")
+        print(f"Could not log in to {username}: {payload}.")
     
     return token
 
 
 if __name__ == '__main__':
+    logs_enabled: bool = False
     try:
         dotenv.load_dotenv()
 
-        main_sess = login('emma', os.getenv("PASSWORD"))
+        main_session_token = login('emma', os.getenv("PASSWORD"))
 
-        logs_enabled: bool = False
-        logs_sess: str | None = None
+        logs_session_token: str | None = None
 
         replies = 0
 
-        lp = os.getenv("LOGS_PASSWORD")
-        if (lp):
+        logs_password = os.getenv("LOGS_PASSWORD")
+        if (logs_password):
             logs_enabled = True
         
         if (logs_enabled):
-            logs_sess = login('emma_logs', lp)
+            logs_session_token = login('emma_logs', logs_password)
 
-        if (main_sess is not None):
+        if (main_session_token is not None):
             last_status_count = 1
             last_success: bool | None = None
             while True:
-                success, replied_to = parse_notifications(main_sess)
+                success, replied_to = parse_notifications(main_session_token)
                 replies += replied_to
 
                 if (success != last_success):
@@ -163,7 +163,7 @@ if __name__ == '__main__':
                         print(string)
                         
                         if (logs_enabled):
-                            reply_to(logs_sess, string, "624")
+                            reply_to(logs_session_token, string, "624")
 
                     last_status_count = 1
                     last_success = success
@@ -177,7 +177,7 @@ if __name__ == '__main__':
             print("Could not login.")
     except Exception as e:
         if(logs_enabled):
-            reply_to(logs_sess, str(e), "624")
+            reply_to(logs_session_token, str(e), "624")
         
         print(str(e))
     
